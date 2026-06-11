@@ -1,0 +1,10 @@
+.git
+.github
+build
+depends/built
+depends/sources
+depends/work
+*.tar.gz
+*.zip
+*.log
+
