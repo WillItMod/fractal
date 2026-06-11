@@ -65,6 +65,7 @@ RUN apt-get update \
       libboost-program-options1.83.0 \
       libboost-thread1.83.0 \
       libevent-2.1-7t64 \
+      libevent-extra-2.1-7t64 \
       libevent-pthreads-2.1-7t64 \
       libzmq5 \
     && mkdir -p /data \
