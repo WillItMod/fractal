@@ -67,10 +67,8 @@ RUN apt-get update \
       libevent-2.1-7t64 \
       libevent-pthreads-2.1-7t64 \
       libzmq5 \
-    && groupadd -g 1000 -r bitcoin \
-    && useradd -u 1000 -r -m -g bitcoin bitcoin \
     && mkdir -p /data \
-    && chown bitcoin:bitcoin /data \
+    && chown 1000:1000 /data \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /src/build/bin/bitcoind /usr/local/bin/bitcoind
@@ -80,10 +78,9 @@ COPY --from=builder /src/build/bin/bitcoin-util /usr/local/bin/bitcoin-util
 
 ENV BITCOIN_VERSION=0.3.0
 
-USER bitcoin:bitcoin
+USER 1000:1000
 WORKDIR /data
 
 EXPOSE 8332 8333 18332 18333
 
 CMD ["bitcoind"]
-
