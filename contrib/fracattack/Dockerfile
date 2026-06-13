@@ -5,6 +5,7 @@ FROM ubuntu:24.04 AS builder
 ARG DEBIAN_FRONTEND=noninteractive
 ARG VCS_REF=unknown
 ARG BUILD_DATE=unknown
+ARG BUILD_JOBS=2
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -41,7 +42,7 @@ RUN cmake -B build \
       -DWITH_ZMQ=ON \
       -DWITH_CCACHE=OFF \
       -DINSTALL_MAN=OFF \
-    && cmake --build build --target bitcoind bitcoin-cli bitcoin-tx bitcoin-util -j"$(nproc)" \
+    && cmake --build build --target bitcoind bitcoin-cli bitcoin-tx bitcoin-util -j"${BUILD_JOBS}" \
     && strip build/bin/bitcoind build/bin/bitcoin-cli build/bin/bitcoin-tx build/bin/bitcoin-util
 
 FROM ubuntu:24.04
@@ -77,11 +78,11 @@ COPY --from=builder /src/build/bin/bitcoin-cli /usr/local/bin/bitcoin-cli
 COPY --from=builder /src/build/bin/bitcoin-tx /usr/local/bin/bitcoin-tx
 COPY --from=builder /src/build/bin/bitcoin-util /usr/local/bin/bitcoin-util
 
-ENV BITCOIN_VERSION=0.3.0
+ENV BITCOIN_VERSION=0.3.1
 
 USER 1000:1000
 WORKDIR /data
 
-EXPOSE 8332 8333 18332 18333
+EXPOSE 28342 28343 28345
 
 CMD ["bitcoind"]
