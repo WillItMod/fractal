@@ -1,10 +1,11 @@
-name: Publish FracAttack Fractald
+name: Build FracAttack Fractald candidate
 
 on:
   workflow_dispatch:
   push:
     branches:
       - fractal-29.x
+      - fix/fractal-consensus-*
     paths:
       - ".github/workflows/fracattack-fractald.yml"
       - ".dockerignore"
@@ -12,6 +13,7 @@ on:
       - "CMakeLists.txt"
       - "cmake/**"
       - "src/**"
+      - "test/**"
 
 permissions:
   contents: read
@@ -19,7 +21,8 @@ permissions:
 
 env:
   IMAGE: ghcr.io/willitmod/fracattack-fractald
-  TAG: 0.3.0-dev
+  # Promotion to 0.4.0-dev / 0.4.0 is a separate, validated operation.
+  TAG: 0.4.0-candidate-${{ github.sha }}
 
 jobs:
   build:
@@ -61,7 +64,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build image
+      - name: Build image and run subsidy consensus tests
         run: |
           set -euo pipefail
           docker buildx build \
@@ -73,17 +76,18 @@ jobs:
             -t "${{ steps.meta.outputs.image }}" \
             .
 
-      - name: Smoke test binaries
+      - name: Verify packaged daemon version and startup
         run: |
           set -euo pipefail
           image="${{ steps.meta.outputs.image }}"
-          docker run --rm "$image" bitcoind -version
-          docker run --rm --entrypoint bitcoin-cli "$image" -version
+          docker run --rm "$image" bitcoind -version | grep -F 'Bitcoin Core daemon version v0.4.0'
+          docker run --rm --entrypoint bitcoin-cli "$image" -version | grep -F 'Bitcoin Core RPC client version v0.4.0'
           docker run --rm --entrypoint sh "$image" -lc '
             set -e
             datadir="$(mktemp -d)"
             bitcoind -regtest -datadir="$datadir" -server=1 -listen=0 -daemonwait
             bitcoin-cli -regtest -datadir="$datadir" getblockchaininfo
+            bitcoin-cli -regtest -datadir="$datadir" getnetworkinfo | grep -E "\"version\": 400,"
             bitcoin-cli -regtest -datadir="$datadir" stop
           '
 
@@ -106,6 +110,9 @@ jobs:
             "commit=${GITHUB_SHA}" \
             "image=${image}" \
             "platform=${{ matrix.platform }}" \
+            "daemon_version=0.4.0" \
+            "upstream_commit=8c22167f04250c7dd03afe46af4158bd08001183" \
+            "validation=validation_tests,feature_fractal_subsidy" \
             > "dist/${asset}/BUILDINFO"
           tar -C dist -czf "${asset}.tar.gz" "$asset"
 
@@ -139,4 +146,3 @@ jobs:
             "${IMAGE}:${TAG}-amd64" \
             "${IMAGE}:${TAG}-arm64"
           docker buildx imagetools inspect "${IMAGE}:${TAG}"
-
