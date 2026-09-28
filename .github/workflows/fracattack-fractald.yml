@@ -1,4 +1,4 @@
-name: Build FracAttack Fractald candidate
+name: Validate FracAttack Fractald candidate
 
 on:
   workflow_dispatch:
@@ -17,11 +17,12 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 env:
   IMAGE: ghcr.io/willitmod/fracattack-fractald
-  # Promotion to 0.4.0-dev / 0.4.0 is a separate, validated operation.
+  # The existing GHCR package belongs to FracAttack_Build. Its pinned-source
+  # node publisher builds this Dockerfile and publishes candidates; this
+  # repository validates source and exports binaries without package credentials.
   TAG: 0.4.0-candidate-${{ github.sha }}
 
 jobs:
@@ -56,13 +57,6 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Docker login (GHCR)
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build image and run subsidy consensus tests
         run: |
@@ -122,27 +116,3 @@ jobs:
           name: ${{ steps.meta.outputs.asset }}
           path: ${{ steps.meta.outputs.asset }}.tar.gz
           if-no-files-found: error
-
-      - name: Push arch image
-        run: docker push "${{ steps.meta.outputs.image }}"
-
-  manifest:
-    name: Publish multi-arch manifest
-    runs-on: ubuntu-24.04
-    needs: build
-    steps:
-      - name: Docker login (GHCR)
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish manifest
-        run: |
-          set -euo pipefail
-          docker buildx imagetools create \
-            -t "${IMAGE}:${TAG}" \
-            "${IMAGE}:${TAG}-amd64" \
-            "${IMAGE}:${TAG}-arm64"
-          docker buildx imagetools inspect "${IMAGE}:${TAG}"
