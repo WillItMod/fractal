@@ -1,10 +1,11 @@
-name: Publish FracAttack Fractald
+name: Validate FracAttack Fractald candidate
 
 on:
   workflow_dispatch:
   push:
     branches:
       - fractal-29.x
+      - fix/fractal-consensus-*
     paths:
       - ".github/workflows/fracattack-fractald.yml"
       - ".dockerignore"
@@ -12,14 +13,17 @@ on:
       - "CMakeLists.txt"
       - "cmake/**"
       - "src/**"
+      - "test/**"
 
 permissions:
   contents: read
-  packages: write
 
 env:
   IMAGE: ghcr.io/willitmod/fracattack-fractald
-  TAG: 0.3.0-dev
+  # The existing GHCR package belongs to FracAttack_Build. Its pinned-source
+  # node publisher builds this Dockerfile and publishes candidates; this
+  # repository validates source and exports binaries without package credentials.
+  TAG: 0.4.0-candidate-${{ github.sha }}
 
 jobs:
   build:
@@ -54,14 +58,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Docker login (GHCR)
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build image
+      - name: Build image and run subsidy consensus tests
         run: |
           set -euo pipefail
           docker buildx build \
@@ -73,17 +70,18 @@ jobs:
             -t "${{ steps.meta.outputs.image }}" \
             .
 
-      - name: Smoke test binaries
+      - name: Verify packaged daemon version and startup
         run: |
           set -euo pipefail
           image="${{ steps.meta.outputs.image }}"
-          docker run --rm "$image" bitcoind -version
-          docker run --rm --entrypoint bitcoin-cli "$image" -version
+          docker run --rm "$image" bitcoind -version | grep -F 'Bitcoin Core daemon version v0.4.0'
+          docker run --rm --entrypoint bitcoin-cli "$image" -version | grep -F 'Bitcoin Core RPC client version v0.4.0'
           docker run --rm --entrypoint sh "$image" -lc '
             set -e
             datadir="$(mktemp -d)"
             bitcoind -regtest -datadir="$datadir" -server=1 -listen=0 -daemonwait
             bitcoin-cli -regtest -datadir="$datadir" getblockchaininfo
+            bitcoin-cli -regtest -datadir="$datadir" getnetworkinfo | grep -E "\"version\": 400,"
             bitcoin-cli -regtest -datadir="$datadir" stop
           '
 
@@ -106,6 +104,9 @@ jobs:
             "commit=${GITHUB_SHA}" \
             "image=${image}" \
             "platform=${{ matrix.platform }}" \
+            "daemon_version=0.4.0" \
+            "upstream_commit=8c22167f04250c7dd03afe46af4158bd08001183" \
+            "validation=validation_tests,feature_fractal_subsidy" \
             > "dist/${asset}/BUILDINFO"
           tar -C dist -czf "${asset}.tar.gz" "$asset"
 
@@ -115,28 +116,3 @@ jobs:
           name: ${{ steps.meta.outputs.asset }}
           path: ${{ steps.meta.outputs.asset }}.tar.gz
           if-no-files-found: error
-
-      - name: Push arch image
-        run: docker push "${{ steps.meta.outputs.image }}"
-
-  manifest:
-    name: Publish multi-arch manifest
-    runs-on: ubuntu-24.04
-    needs: build
-    steps:
-      - name: Docker login (GHCR)
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish manifest
-        run: |
-          set -euo pipefail
-          docker buildx imagetools create \
-            -t "${IMAGE}:${TAG}" \
-            "${IMAGE}:${TAG}-amd64" \
-            "${IMAGE}:${TAG}-arm64"
-          docker buildx imagetools inspect "${IMAGE}:${TAG}"
-
